@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
+import * as ImagePicker from 'expo-image-picker';
 
 type Client = { id: string; name: string; contact: string };
 type Service = { id: string; name: string; price_cents: number };
@@ -14,7 +15,8 @@ type Dashboard = {
   role: 'admin' | 'operator'; clients: Client[]; services: Service[];
   subscriptions: Subscription[]; hasMore: boolean;
 };
-type Page = 'Suscripciones' | 'Clientes' | 'Servicios' | 'Operadores';
+type Page = 'Suscripciones' | 'Clientes' | 'Servicios' | 'Operadores' | 'Comprobantes';
+type ReceiptResult = { id?: string; status?: string; message?: string; error?: string };
 const sessionKey = 'neversionDigitalSession';
 const base = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
 const money = (cents: number) => 'Q' + (cents / 100).toFixed(2);
@@ -72,6 +74,7 @@ export default function NeversionDigital() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [detail, setDetail] = useState('');
+  const [editing, setEditing] = useState<string>();
   const [client, setClient] = useState('');
   const [service, setService] = useState('');
   const [due, setDue] = useState('');
@@ -79,6 +82,8 @@ export default function NeversionDigital() {
   const [operatorEmail, setOperatorEmail] = useState('');
   const [operatorPassword, setOperatorPassword] = useState('');
   const [days, setDays] = useState('7');
+  const [receiptImage, setReceiptImage] = useState<ImagePicker.ImagePickerAsset>();
+  const [receiptResult, setReceiptResult] = useState<ReceiptResult>();
 
   useEffect(() => {
     (async () => {
@@ -98,8 +103,19 @@ export default function NeversionDigital() {
     setToken(undefined);
     setDashboard(undefined);
     setOperators([]);
+    setReceiptImage(undefined);
+    setReceiptResult(undefined);
     setPage('Suscripciones');
     setOffset(0);
+    setEditing(undefined);
+    setName('');
+    setDetail('');
+    setClient('');
+    setService('');
+    setDue('');
+    setRenewing(undefined);
+    setOperatorEmail('');
+    setOperatorPassword('');
   }
 
   async function run(work: () => Promise<void>) {
@@ -124,6 +140,7 @@ export default function NeversionDigital() {
   function choosePage(next: Page) {
     setName('');
     setDetail('');
+    setEditing(undefined);
     setRenewing(undefined);
     setDue('');
     setPage(next);
@@ -132,8 +149,8 @@ export default function NeversionDigital() {
   }
 
   const admin = dashboard?.role === 'admin';
-  const pages: Page[] = admin ? ['Suscripciones', 'Clientes', 'Servicios', 'Operadores'] :
-    ['Suscripciones', 'Clientes', 'Servicios'];
+  const pages: Page[] = admin ? ['Suscripciones', 'Clientes', 'Servicios', 'Comprobantes', 'Operadores'] :
+    ['Suscripciones', 'Clientes', 'Servicios', 'Comprobantes'];
 
   return <SafeAreaView style={styles.shell}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
@@ -214,27 +231,91 @@ export default function NeversionDigital() {
         </>}
         {(page === 'Clientes' || page === 'Servicios') && <>
           {admin && <View style={styles.card}>
-            <Text style={styles.title}>{page === 'Clientes' ? 'Nuevo cliente' : 'Nuevo servicio'}</Text>
+            <Text style={styles.title}>{editing ? 'Editar registro' : page === 'Clientes' ? 'Nuevo cliente' : 'Nuevo servicio'}</Text>
             <Field label="Nombre" value={name} change={setName} />
             <Field label={page === 'Clientes' ? 'Contacto' : 'Precio en quetzales'} value={detail} change={setDetail}
               keyboard={page === 'Clientes' ? 'default' : 'decimal-pad'} />
             <Action label="Guardar" disabled={busy} onPress={() => void run(async () => {
-              if (page === 'Clientes') await request('clients', token, 'POST', { name, contact: detail });
+              const collection = page === 'Clientes' ? 'clients' : 'services';
+              const path = editing ? collection + '/' + editing : collection;
+              const method = editing ? 'PATCH' : 'POST';
+              if (page === 'Clientes') await request(path, token, method, { name, contact: detail });
               else {
                 const price = detail.trim().replace(',', '.');
                 if (!/^\d+(\.\d{1,2})?$/.test(price)) throw new Error('Ingresa un precio válido.');
-                await request('services', token, 'POST', { name, priceCents: Math.round(Number(price) * 100) });
+                await request(path, token, method, { name, priceCents: Math.round(Number(price) * 100) });
               }
-              setName(''); setDetail(''); await refresh();
+              setName(''); setDetail(''); setEditing(undefined); await refresh();
             })} />
+            {editing && <Action label="Salir de edición" subtle disabled={busy}
+              onPress={() => { setName(''); setDetail(''); setEditing(undefined); }} />}
           </View>}
           {(page === 'Clientes' ? dashboard.clients : dashboard.services).map((item) =>
             <View key={item.id} style={styles.card}>
               <Text style={styles.title}>{item.name}</Text>
               <Text style={styles.caption}>{'contact' in item ? item.contact : money(item.price_cents)}</Text>
+              {admin && <View style={styles.tabs}>
+                <Action label="Editar" subtle disabled={busy} onPress={() => {
+                  setEditing(item.id);
+                  setName(item.name);
+                  setDetail('contact' in item ? item.contact : (item.price_cents / 100).toFixed(2));
+                }} />
+                <Action label="Archivar" subtle disabled={busy} onPress={() => Alert.alert('Archivar registro', item.name, [
+                  { text: 'Volver', style: 'cancel' },
+                  { text: 'Archivar', style: 'destructive', onPress: () => void run(async () => {
+                    const collection = page === 'Clientes' ? 'clients' : 'services';
+                    await request(collection + '/' + item.id, token, 'PATCH', { action: 'archive' });
+                    if (editing === item.id) { setEditing(undefined); setName(''); setDetail(''); }
+                    if (client === item.id) setClient('');
+                    if (service === item.id) setService('');
+                    await refresh();
+                  }) },
+                ])} />
+              </View>}
             </View>,
           )}
         </>}
+        {page === 'Comprobantes' && <View style={styles.card}>
+          <Text style={styles.title}>Validar comprobante</Text>
+          <Action label={receiptImage ? 'Cambiar imagen' : 'Elegir imagen'} subtle disabled={busy}
+            onPress={() => void run(async () => {
+              const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+              if (picked.canceled) return;
+              const selected = picked.assets[0];
+              if (selected.fileSize && selected.fileSize > 5 * 1024 * 1024) {
+                throw new Error('La imagen puede pesar hasta 5 MB.');
+              }
+              setReceiptImage(selected);
+              setReceiptResult(undefined);
+            })} />
+          {!!receiptImage && <Text style={styles.caption}>{receiptImage.fileName ?? 'Imagen seleccionada'}</Text>}
+          <Action label={busy ? 'Procesando…' : 'Validar imagen'} disabled={busy || !receiptImage}
+            onPress={() => void run(async () => {
+              if (!receiptImage) return;
+              setReceiptResult(undefined);
+              const form = new FormData();
+              form.append('receipt', {
+                uri: receiptImage.uri,
+                name: receiptImage.fileName || 'comprobante',
+                type: receiptImage.mimeType || 'application/octet-stream',
+              } as unknown as Blob);
+              const response = await fetch(base + '/api/receipts', {
+                method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
+              });
+              const result: ReceiptResult = await response.json().catch(() => ({}));
+              if (!result.status) {
+                throw new ApiError(response.status, result.error || 'No se pudo validar el comprobante.');
+              }
+              setReceiptImage(undefined);
+              setReceiptResult(result);
+            })} />
+          {!!receiptResult && <View accessibilityLiveRegion="polite">
+            <Text style={styles.title}>{receiptResult.status === 'APPROVED' ? 'Validación aprobada' :
+              receiptResult.status === 'REVIEW_REQUIRED' ? 'Requiere revisión' : 'Comprobante rechazado'}</Text>
+            <Text style={styles.caption}>{receiptResult.message}</Text>
+            {!!receiptResult.id && <Text style={styles.caption}>Referencia de revisión: {receiptResult.id}</Text>}
+          </View>}
+        </View>}
         {page === 'Operadores' && admin && <>
           <View style={styles.card}>
             <Text style={styles.title}>Crear o renovar acceso</Text>

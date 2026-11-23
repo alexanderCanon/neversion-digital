@@ -28,3 +28,8 @@ En GitHub Actions, configura `CLOUDFLARE_API_TOKEN` como secreto y `CLOUDFLARE_A
 Para habilitar el inicio de sesión, configura además la variable `ADMIN_EMAIL` y el secreto `ADMIN_PASSWORD` con una contraseña única de al menos 16 caracteres. El workflow publica esos valores como secretos del Worker. Si prefieres gestionarlos desde Cloudflare, configura ambos como secretos directamente en el Worker.
 
 En Actions, ejecuta **Desplegar API en Cloudflare** desde `main`. El workflow vuelve a ejecutar CI, prepara D1, aplica las migraciones y comprueba `/health`. La URL aparece en el resumen y sirve como `EXPO_PUBLIC_API_URL` para la app. La distribución de los binarios móviles se hace por separado.
+
+### Integraciones
+
+- **Comprobantes.** En GitHub Actions, define `RECEIPT_VALIDATOR_SERVICE=receipt-validator` y el secreto `RECEIPT_INTEGRATION_KEY` (32 caracteres aleatorios como mínimo). Configura el mismo secreto en el Worker de Receipt Validator. Despliega primero la versión del validador que incluye el endpoint de integración.
+- **Telegram.** Define el secreto `REMINDER_API_KEY` (32 caracteres aleatorios como mínimo). El Worker de recordatorios debe tener el mismo secreto y un binding al Worker `neversion-digital-api`. Usa claves distintas para las dos integraciones.

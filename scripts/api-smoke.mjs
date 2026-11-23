@@ -26,6 +26,7 @@ for (let i = 0; ; i++) {
 }
 
 await call('/api/dashboard', 401);
+await call('/internal/renewal-digest', 401);
 const { token } = await call('/api/login', 200, {
   method: 'POST', payload: { email: 'admin@example.test', password: 'local-example-change-me' },
 });
@@ -40,6 +41,26 @@ await call('/api/subscriptions/' + id, 204, {
 const dashboard = await call('/api/dashboard', 200, { token });
 assert.equal(dashboard.subscriptions.find((item) => item.id === id)?.due_on, '2030-10-31');
 assert.equal(dashboard.subscriptions.find((item) => item.id === id)?.price_cents, 4599);
+
+await call('/api/services/' + serviceId, 204, {
+  token, method: 'PATCH', payload: { name: 'Servicio actualizado', priceCents: 5999 },
+});
+const afterEdit = await call('/api/dashboard', 200, { token });
+assert.equal(afterEdit.services.find((item) => item.id === serviceId)?.price_cents, 5999);
+assert.equal(afterEdit.subscriptions.find((item) => item.id === id)?.price_cents, 4599);
+
+const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Guatemala' }).format(new Date());
+await call('/api/subscriptions', 201, {
+  token, method: 'POST', payload: { clientId, serviceId, dueOn: today },
+});
+const digest = await call('/internal/renewal-digest', 200, {
+  token: 'local-example-reminder-key-only-not-for-production',
+});
+assert.ok(digest.subscriptions.some((item) => item.client === 'Cliente ' + nonce && item.dueOn === today));
+await call('/api/clients/' + clientId, 204, { token, method: 'PATCH', payload: { action: 'archive' } });
+const afterArchive = await call('/api/dashboard', 200, { token });
+assert.ok(!afterArchive.clients.some((item) => item.id === clientId));
+assert.ok(afterArchive.subscriptions.some((item) => item.id === id));
 
 const operatorEmail = nonce + '@example.test';
 const password = 'operator-example-1234';

@@ -26,6 +26,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      RECEIPT_VALIDATOR_SERVICE: ${{ vars.RECEIPT_VALIDATOR_SERVICE }}
+      RECEIPT_INTEGRATION_KEY: ${{ secrets.RECEIPT_INTEGRATION_KEY }}
+      REMINDER_API_KEY: ${{ secrets.REMINDER_API_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -42,16 +45,25 @@ jobs:
           deploy_log=$(mktemp)
           trap 'rm -f "$secret_file" "$deploy_log"' EXIT
           args=()
-          if [[ -n "$ADMIN_EMAIL" || -n "$ADMIN_PASSWORD" ]]; then
-            node --input-type=module -e '
-              import { writeFileSync } from "node:fs";
-              const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const { ADMIN_EMAIL, ADMIN_PASSWORD, RECEIPT_INTEGRATION_KEY, REMINDER_API_KEY } = process.env;
+            const secrets = {};
+            if (ADMIN_EMAIL || ADMIN_PASSWORD) {
               if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ADMIN_EMAIL) ||
                   ADMIN_PASSWORD.length < 16 || ADMIN_PASSWORD.length > 128) {
                 throw new Error("Configura ADMIN_EMAIL y una ADMIN_PASSWORD de 16 a 128 caracteres.");
               }
-              writeFileSync(process.argv[1], JSON.stringify({ADMIN_EMAIL, ADMIN_PASSWORD}));
-            ' "$secret_file"
+              Object.assign(secrets, { ADMIN_EMAIL, ADMIN_PASSWORD });
+            }
+            for (const [name, value] of Object.entries({ RECEIPT_INTEGRATION_KEY, REMINDER_API_KEY })) {
+              if (!value) continue;
+              if (value.length < 32) throw new Error(name + " requiere al menos 32 caracteres.");
+              secrets[name] = value;
+            }
+            writeFileSync(process.argv[1], JSON.stringify(secrets));
+          ' "$secret_file"
+          if [[ $(wc -c < "$secret_file") -gt 2 ]]; then
             args+=(--secrets-file "$secret_file")
           fi
           npx --no-install wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc

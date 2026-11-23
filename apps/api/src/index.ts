@@ -1,5 +1,6 @@
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { Context } from 'hono';
 
 type Identity = { role: 'admin' | 'operator'; operatorId?: string };
@@ -9,6 +10,10 @@ type App = {
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
     LOGIN_LIMIT: RateLimit;
+    RECEIPT_LIMIT: RateLimit;
+    RECEIPT_VALIDATOR?: Fetcher;
+    RECEIPT_INTEGRATION_KEY?: string;
+    REMINDER_API_KEY?: string;
   };
   Variables: { identity: Identity; sessionHash: string };
 };
@@ -106,7 +111,8 @@ app.use('/api/*', async (c, next) => {
   if (!session) return c.json({ error: 'Tu sesión terminó. Vuelve a iniciar sesión.' }, 401);
   c.set('identity', session.operator_id ? { role: 'operator', operatorId: session.operator_id } : { role: 'admin' });
   c.set('sessionHash', sessionHash);
-  if (session.operator_id && c.req.method !== 'GET' && c.req.path !== '/api/logout') {
+  const receiptUpload = c.req.method === 'POST' && c.req.path === '/api/receipts';
+  if (session.operator_id && c.req.method !== 'GET' && c.req.path !== '/api/logout' && !receiptUpload) {
     return c.json({ error: 'Este acceso es de solo lectura.' }, 403);
   }
   await next();
@@ -153,6 +159,39 @@ app.post('/api/services', async (c) => {
   const id = crypto.randomUUID();
   await c.env.DB.prepare('INSERT INTO services (id, name, price_cents) VALUES (?, ?, ?)').bind(id, name, body.priceCents).run();
   return c.json({ id }, 201);
+});
+
+app.patch('/api/clients/:id', async (c) => {
+  const body = await input(c);
+  const id = c.req.param('id');
+  if (body.action === 'archive') {
+    await c.env.DB.prepare('UPDATE clients SET archived_at = COALESCE(archived_at, ?) WHERE id = ?')
+      .bind(now(), id).run();
+    return c.body(null, 204);
+  }
+  const name = text(body.name, 120);
+  const contact = text(body.contact ?? '', 200);
+  if (!name || contact === null) return c.json({ error: 'Revisa el nombre y contacto del cliente.' }, 400);
+  const result = await c.env.DB.prepare('UPDATE clients SET name = ?, contact = ? WHERE id = ? AND archived_at IS NULL')
+    .bind(name, contact, id).run();
+  if (!result.meta.changes) return c.json({ error: 'Cliente no disponible.' }, 404);
+  return c.body(null, 204);
+});
+
+app.patch('/api/services/:id', async (c) => {
+  const body = await input(c);
+  const id = c.req.param('id');
+  if (body.action === 'archive') {
+    await c.env.DB.prepare('UPDATE services SET archived_at = COALESCE(archived_at, ?) WHERE id = ?')
+      .bind(now(), id).run();
+    return c.body(null, 204);
+  }
+  const name = text(body.name, 120);
+  if (!name || !validPrice(body.priceCents)) return c.json({ error: 'Revisa el nombre y el precio.' }, 400);
+  const result = await c.env.DB.prepare('UPDATE services SET name = ?, price_cents = ? WHERE id = ? AND archived_at IS NULL')
+    .bind(name, body.priceCents, id).run();
+  if (!result.meta.changes) return c.json({ error: 'Servicio no disponible.' }, 404);
+  return c.body(null, 204);
 });
 
 app.post('/api/subscriptions', async (c) => {
@@ -229,6 +268,56 @@ app.delete('/api/operators/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM sessions WHERE operator_id = ?').bind(id),
   ]);
   return c.body(null, 204);
+});
+
+app.post('/api/receipts', bodyLimit({
+  maxSize: 5 * 1024 * 1024 + 100_000,
+  onError: (c) => c.json({ error: 'La imagen puede pesar hasta 5 MB.' }, 413),
+}), async (c) => {
+  const validator = c.env.RECEIPT_VALIDATOR;
+  const key = c.env.RECEIPT_INTEGRATION_KEY;
+  if (!validator || !key || key.length < 32) {
+    return c.json({ error: 'La validación de comprobantes aún no está habilitada.' }, 503);
+  }
+  const contentType = c.req.header('Content-Type');
+  if (!contentType?.startsWith('multipart/form-data;')) {
+    return c.json({ error: 'Adjunta un comprobante como imagen.' }, 415);
+  }
+  const actor = c.get('identity').operatorId ?? 'admin';
+  if (!(await c.env.RECEIPT_LIMIT.limit({ key: actor })).success) {
+    return c.json({ error: 'Espera un minuto antes de volver a validar.' }, 429);
+  }
+  const response = await validator.fetch('https://receipt-validator.internal/api/integrations/neversion/receipts', {
+    method: 'POST',
+    headers: { 'Content-Type': contentType, Authorization: 'Bearer ' + key, 'X-Neversion-Actor': actor },
+    body: c.req.raw.body,
+  });
+  if (response.status >= 500 || response.status === 401 || response.status === 404) {
+    await response.body?.cancel();
+    return c.json({ error: 'El validador de comprobantes no está disponible.' }, 502);
+  }
+  const result = await response.json<{ id?: string; status?: string; reason?: string; message?: string }>();
+  return Response.json({ id: result.id, status: result.status, reason: result.reason, message: result.message },
+    { status: response.status, headers: { 'Cache-Control': 'no-store' } });
+});
+
+app.get('/internal/renewal-digest', async (c) => {
+  const key = c.env.REMINDER_API_KEY;
+  if (!key || key.length < 32 || !same(c.req.header('Authorization') ?? '', 'Bearer ' + key)) {
+    return c.json({ error: 'Acceso restringido.' }, 401);
+  }
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Guatemala' }).format(new Date());
+  const result = await c.env.DB.prepare(
+    'SELECT c.name AS client, v.name AS service, s.due_on AS dueOn, COUNT(*) OVER () AS total ' +
+    'FROM subscriptions s JOIN clients c ON c.id = s.client_id JOIN services v ON v.id = s.service_id ' +
+    "WHERE s.cancelled_at IS NULL AND s.due_on BETWEEN ? AND date(?, '+3 days') " +
+    'ORDER BY s.due_on, s.id LIMIT 20',
+  ).bind(today, today).all<{ client: string; service: string; dueOn: string; total: number }>();
+  return c.json({
+    today,
+    total: result.results[0]?.total ?? 0,
+    subscriptions: result.results.map(({ client, service, dueOn }) => ({ client, service, dueOn })),
+  });
 });
 
 app.onError((error, c) => {

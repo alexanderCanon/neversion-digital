@@ -2,16 +2,33 @@
   "name": "neversion-digital-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-16",
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true
+  },
   "preview_urls": false,
-  "d1_databases": [{
-    "binding": "DB",
-    "database_name": "neversion-digital-db",
-    "database_id": "00000000-0000-0000-0000-000000000000"
-  }],
-  "ratelimits": [{
-    "name": "LOGIN_LIMIT",
-    "namespace_id": "739011",
-    "simple": { "limit": 8, "period": 60 }
-  }]
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "neversion-digital-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "LOGIN_LIMIT",
+      "namespace_id": "739011",
+      "simple": {
+        "limit": 8,
+        "period": 60
+      }
+    },
+    {
+      "name": "RECEIPT_LIMIT",
+      "namespace_id": "739012",
+      "simple": {
+        "limit": 6,
+        "period": 60
+      }
+    }
+  ]
 }

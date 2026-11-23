@@ -11,6 +11,8 @@ describe('management input', () => {
 
   it('rejects anonymous management calls before touching D1', async () => {
     expect((await api.request('/api/dashboard')).status).toBe(401);
+    expect((await api.request('/api/receipts', { method: 'POST' })).status).toBe(401);
+    expect((await api.request('/internal/renewal-digest', undefined, {})).status).toBe(401);
     expect((await api.request('/api/operators', { method: 'POST' })).status).toBe(401);
   });
 });

@@ -32,6 +32,8 @@ const database = existing ?? await call(endpoint, {
 });
 if (!/^[a-f0-9-]{36}$/i.test(database.uuid)) throw new Error('Cloudflare no devolvió un ID de D1 válido.');
 db.database_id = database.uuid;
+const validator = process.env.RECEIPT_VALIDATOR_SERVICE;
+if (validator) config.services = [{ binding: 'RECEIPT_VALIDATOR', service: validator }];
 await writeFile(new URL('../apps/api/wrangler.deploy.jsonc', import.meta.url),
   JSON.stringify(config, null, 2) + '\n');
 console.log('D1 de despliegue preparado.');

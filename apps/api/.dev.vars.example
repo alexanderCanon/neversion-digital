@@ -1,2 +1,3 @@
 ADMIN_EMAIL=admin@example.test
 ADMIN_PASSWORD=local-example-change-me
+REMINDER_API_KEY=local-example-reminder-key-only-not-for-production
