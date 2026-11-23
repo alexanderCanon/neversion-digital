@@ -74,6 +74,7 @@ export default function NeversionDigital() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [detail, setDetail] = useState('');
+  const [editing, setEditing] = useState<string>();
   const [client, setClient] = useState('');
   const [service, setService] = useState('');
   const [due, setDue] = useState('');
@@ -106,6 +107,15 @@ export default function NeversionDigital() {
     setReceiptResult(undefined);
     setPage('Suscripciones');
     setOffset(0);
+    setEditing(undefined);
+    setName('');
+    setDetail('');
+    setClient('');
+    setService('');
+    setDue('');
+    setRenewing(undefined);
+    setOperatorEmail('');
+    setOperatorPassword('');
   }
 
   async function run(work: () => Promise<void>) {
@@ -130,6 +140,7 @@ export default function NeversionDigital() {
   function choosePage(next: Page) {
     setName('');
     setDetail('');
+    setEditing(undefined);
     setRenewing(undefined);
     setDue('');
     setPage(next);
@@ -220,24 +231,47 @@ export default function NeversionDigital() {
         </>}
         {(page === 'Clientes' || page === 'Servicios') && <>
           {admin && <View style={styles.card}>
-            <Text style={styles.title}>{page === 'Clientes' ? 'Nuevo cliente' : 'Nuevo servicio'}</Text>
+            <Text style={styles.title}>{editing ? 'Editar registro' : page === 'Clientes' ? 'Nuevo cliente' : 'Nuevo servicio'}</Text>
             <Field label="Nombre" value={name} change={setName} />
             <Field label={page === 'Clientes' ? 'Contacto' : 'Precio en quetzales'} value={detail} change={setDetail}
               keyboard={page === 'Clientes' ? 'default' : 'decimal-pad'} />
             <Action label="Guardar" disabled={busy} onPress={() => void run(async () => {
-              if (page === 'Clientes') await request('clients', token, 'POST', { name, contact: detail });
+              const collection = page === 'Clientes' ? 'clients' : 'services';
+              const path = editing ? collection + '/' + editing : collection;
+              const method = editing ? 'PATCH' : 'POST';
+              if (page === 'Clientes') await request(path, token, method, { name, contact: detail });
               else {
                 const price = detail.trim().replace(',', '.');
                 if (!/^\d+(\.\d{1,2})?$/.test(price)) throw new Error('Ingresa un precio válido.');
-                await request('services', token, 'POST', { name, priceCents: Math.round(Number(price) * 100) });
+                await request(path, token, method, { name, priceCents: Math.round(Number(price) * 100) });
               }
-              setName(''); setDetail(''); await refresh();
+              setName(''); setDetail(''); setEditing(undefined); await refresh();
             })} />
+            {editing && <Action label="Salir de edición" subtle disabled={busy}
+              onPress={() => { setName(''); setDetail(''); setEditing(undefined); }} />}
           </View>}
           {(page === 'Clientes' ? dashboard.clients : dashboard.services).map((item) =>
             <View key={item.id} style={styles.card}>
               <Text style={styles.title}>{item.name}</Text>
               <Text style={styles.caption}>{'contact' in item ? item.contact : money(item.price_cents)}</Text>
+              {admin && <View style={styles.tabs}>
+                <Action label="Editar" subtle disabled={busy} onPress={() => {
+                  setEditing(item.id);
+                  setName(item.name);
+                  setDetail('contact' in item ? item.contact : (item.price_cents / 100).toFixed(2));
+                }} />
+                <Action label="Archivar" subtle disabled={busy} onPress={() => Alert.alert('Archivar registro', item.name, [
+                  { text: 'Volver', style: 'cancel' },
+                  { text: 'Archivar', style: 'destructive', onPress: () => void run(async () => {
+                    const collection = page === 'Clientes' ? 'clients' : 'services';
+                    await request(collection + '/' + item.id, token, 'PATCH', { action: 'archive' });
+                    if (editing === item.id) { setEditing(undefined); setName(''); setDetail(''); }
+                    if (client === item.id) setClient('');
+                    if (service === item.id) setService('');
+                    await refresh();
+                  }) },
+                ])} />
+              </View>}
             </View>,
           )}
         </>}

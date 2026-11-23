@@ -161,6 +161,39 @@ app.post('/api/services', async (c) => {
   return c.json({ id }, 201);
 });
 
+app.patch('/api/clients/:id', async (c) => {
+  const body = await input(c);
+  const id = c.req.param('id');
+  if (body.action === 'archive') {
+    await c.env.DB.prepare('UPDATE clients SET archived_at = COALESCE(archived_at, ?) WHERE id = ?')
+      .bind(now(), id).run();
+    return c.body(null, 204);
+  }
+  const name = text(body.name, 120);
+  const contact = text(body.contact ?? '', 200);
+  if (!name || contact === null) return c.json({ error: 'Revisa el nombre y contacto del cliente.' }, 400);
+  const result = await c.env.DB.prepare('UPDATE clients SET name = ?, contact = ? WHERE id = ? AND archived_at IS NULL')
+    .bind(name, contact, id).run();
+  if (!result.meta.changes) return c.json({ error: 'Cliente no disponible.' }, 404);
+  return c.body(null, 204);
+});
+
+app.patch('/api/services/:id', async (c) => {
+  const body = await input(c);
+  const id = c.req.param('id');
+  if (body.action === 'archive') {
+    await c.env.DB.prepare('UPDATE services SET archived_at = COALESCE(archived_at, ?) WHERE id = ?')
+      .bind(now(), id).run();
+    return c.body(null, 204);
+  }
+  const name = text(body.name, 120);
+  if (!name || !validPrice(body.priceCents)) return c.json({ error: 'Revisa el nombre y el precio.' }, 400);
+  const result = await c.env.DB.prepare('UPDATE services SET name = ?, price_cents = ? WHERE id = ? AND archived_at IS NULL')
+    .bind(name, body.priceCents, id).run();
+  if (!result.meta.changes) return c.json({ error: 'Servicio no disponible.' }, 404);
+  return c.body(null, 204);
+});
+
 app.post('/api/subscriptions', async (c) => {
   const body = await input(c);
   const client = text(body.clientId, 36);
