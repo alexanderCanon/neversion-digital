@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Neversion Digital",
+    "slug": "neversion-digital",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neversion.digital"
+    },
+    "android": {
+      "predictiveBackGestureEnabled": false,
+      "package": "com.neversion.digital"
+    },
+    "scheme": "neversiondigital",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-status-bar"
+    ]
+  }
+}

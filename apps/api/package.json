@@ -1,0 +1,13 @@
+{
+  "name": "neversion-digital-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "hono": "^4.12.0" },
+  "devDependencies": { "@cloudflare/workers-types": "latest", "@types/node": "^24.0.0", "typescript": "~6.0.3", "vitest": "^4.0.0", "wrangler": "4.167.0" }
+}

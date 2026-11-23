@@ -1,0 +1,61 @@
+name: Desplegar API en Cloudflare
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neversion-digital-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Producción
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: apps/api
+      - run: node scripts/cloudflare-database.mjs
+      - name: Migrar D1, desplegar y verificar
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          secret_file=$(mktemp)
+          deploy_log=$(mktemp)
+          trap 'rm -f "$secret_file" "$deploy_log"' EXIT
+          args=()
+          if [[ -n "$ADMIN_EMAIL" || -n "$ADMIN_PASSWORD" ]]; then
+            node --input-type=module -e '
+              import { writeFileSync } from "node:fs";
+              const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ADMIN_EMAIL) ||
+                  ADMIN_PASSWORD.length < 16 || ADMIN_PASSWORD.length > 128) {
+                throw new Error("Configura ADMIN_EMAIL y una ADMIN_PASSWORD de 16 a 128 caracteres.");
+              }
+              writeFileSync(process.argv[1], JSON.stringify({ADMIN_EMAIL, ADMIN_PASSWORD}));
+            ' "$secret_file"
+            args+=(--secrets-file "$secret_file")
+          fi
+          npx --no-install wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
+          NO_COLOR=1 npx --no-install wrangler deploy --config wrangler.deploy.jsonc "${args[@]}" | tee "$deploy_log"
+          url=$(grep -oE 'https://neversion-digital-api\.[a-z0-9-]+\.workers\.dev' "$deploy_log" | head -n 1)
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "$url/health"
+          echo "API móvil: $url" >> "$GITHUB_STEP_SUMMARY"
