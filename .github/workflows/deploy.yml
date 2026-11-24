@@ -28,10 +28,13 @@ jobs:
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.23.0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
         working-directory: apps/api
       - run: node scripts/cloudflare-database.mjs
       - name: Migrar D1, desplegar y verificar
@@ -54,8 +57,8 @@ jobs:
             ' "$secret_file"
             args+=(--secrets-file "$secret_file")
           fi
-          npx --no-install wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
-          NO_COLOR=1 npx --no-install wrangler deploy --config wrangler.deploy.jsonc "${args[@]}" | tee "$deploy_log"
+          pnpm exec wrangler d1 migrations apply DB --remote --config wrangler.deploy.jsonc
+          NO_COLOR=1 pnpm exec wrangler deploy --config wrangler.deploy.jsonc "${args[@]}" | tee "$deploy_log"
           url=$(grep -oE 'https://neversion-digital-api\.[a-z0-9-]+\.workers\.dev' "$deploy_log" | head -n 1)
           curl --fail --silent --show-error --retry 5 --retry-all-errors "$url/health"
           echo "API móvil: $url" >> "$GITHUB_STEP_SUMMARY"
