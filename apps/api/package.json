@@ -8,6 +8,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "hono": "^4.12.0" },
-  "devDependencies": { "@cloudflare/workers-types": "latest", "@types/node": "^24.0.0", "typescript": "~6.0.3", "vitest": "^4.0.0", "wrangler": "4.167.0" }
+  "dependencies": {
+    "hono": "^4.12.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.0.0",
+    "wrangler": "4.167.0"
+  },
+  "packageManager": "pnpm@11.25.0"
 }

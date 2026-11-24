@@ -16,23 +16,26 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: apps/api/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: apps/api/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
         working-directory: apps/api
-      - run: npm run typecheck && npm test
+      - run: pnpm run typecheck && pnpm test
         working-directory: apps/api
       - run: |
           cp .dev.vars.example .dev.vars
-          npx --no-install wrangler d1 migrations apply DB --local
-          npx --no-install wrangler dev --local --ip 127.0.0.1 > /tmp/neversion-api.log 2>&1 &
+          pnpm exec wrangler d1 migrations apply DB --local
+          pnpm exec wrangler dev --local --ip 127.0.0.1 > /tmp/neversion-api.log 2>&1 &
           worker=$!
           trap 'kill "$worker" 2>/dev/null || true' EXIT
           node ../../scripts/api-smoke.mjs || { cat /tmp/neversion-api.log; exit 1; }
-          npx --no-install wrangler deploy --dry-run --outdir /tmp/neversion-worker
+          pnpm exec wrangler deploy --dry-run --outdir /tmp/neversion-worker
         working-directory: apps/api
 
   mobile:
@@ -43,12 +46,15 @@ jobs:
       EXPO_NO_TELEMETRY: 1
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: apps/mobile/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
         working-directory: apps/mobile
-      - run: npm run typecheck && npm run lint && npx --no-install expo export --platform android --platform ios
+      - run: pnpm run typecheck && pnpm run lint && pnpm exec expo export --platform android --platform ios
         working-directory: apps/mobile

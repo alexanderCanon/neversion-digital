@@ -3,22 +3,22 @@ Neversion Digital es una aplicación móvil para distribuidores de servicios dig
 
 ## Desarrollo local
 
-Requiere Node.js 24. El panel administra un negocio y ofrece cuentas de operador revocables con fecha de caducidad. El precio de una suscripción se guarda en centavos de quetzal al crearla.
+Requiere Node.js 24 y pnpm 11.25.0. El panel administra un negocio y ofrece cuentas de operador revocables con fecha de caducidad. El precio de una suscripción se guarda en centavos de quetzal al crearla.
 
 ```sh
 cd apps/api
-npm ci
+pnpm install --frozen-lockfile
 cp .dev.vars.example .dev.vars
-npx wrangler d1 migrations apply DB --local
-npm run dev -- --ip 0.0.0.0
+pnpm exec wrangler d1 migrations apply DB --local
+pnpm run dev -- --ip 0.0.0.0
 ```
 
 En otra terminal, copia `apps/mobile/.env.example` como `apps/mobile/.env` y pon la URL de tu Worker. Para un teléfono en la misma red, usa la IP local de tu equipo y el puerto 8787.
 
 ```sh
 cd apps/mobile
-npm ci
-npm start
+pnpm install --frozen-lockfile
+pnpm start
 ```
 
 ## Despliegue manual
