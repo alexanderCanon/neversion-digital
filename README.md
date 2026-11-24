@@ -3,7 +3,7 @@ Neversion Digital es una aplicación móvil para distribuidores de servicios dig
 
 ## Desarrollo local
 
-Requiere Node.js 24 y pnpm 11.25.0. El panel administra un negocio y ofrece cuentas de operador revocables con fecha de caducidad. El precio de una suscripción se guarda en centavos de quetzal al crearla.
+Requiere Node.js 24 y pnpm 12.23.0. El panel administra un negocio y ofrece cuentas de operador revocables con fecha de caducidad. El precio de una suscripción se guarda en centavos de quetzal al crearla.
 
 ```sh
 cd apps/api
